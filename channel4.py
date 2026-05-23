@@ -63,12 +63,13 @@ def get_live_video_info(channel_url):
     return webpage_url, title
 
 
+
 def get_best_stream(url):
     try:
         output = run_cmd([
             "yt-dlp",
-            "-f", "best",
             "-g",
+            "-f", "best[protocol^=m3u8]/best",
             "--no-warnings",
             url
         ])
@@ -76,12 +77,12 @@ def get_best_stream(url):
         if not output:
             return None
 
-        return output.strip().split("\n")[0]
+        return output.splitlines()[0]
 
     except Exception as e:
-        print(f"获取流失败: {url}")
-        print(e)
+        print("❌ yt-dlp失败:", e)
         return None
+
 
 
 def git_push():
