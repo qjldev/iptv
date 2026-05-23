@@ -1,7 +1,8 @@
-from streamlink import streams
 import subprocess
 import datetime
-import yt_dlp
+import re
+
+
 
 CHANNELS = [
     {"name": "CCTV", "channel_url": "https://www.youtube.com/@CCTVDrama"},
@@ -17,140 +18,129 @@ CHANNELS = [
 ]
 
 
-def is_currently_live(video_url):
-    """
-    用 yt-dlp 检查该视频是否【正在直播】。
-    防止频道 /live 页面把"直播回放"或"预告"也列出来。
-    """
-    ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
-    }
+
+
+def run_cmd(cmd):
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+    return result.stdout.strip()
+
+
+def get_live_video_info(channel_url):
+    live_url = channel_url.rstrip("/") + "/live"
+
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            # is_live=True 或 live_status=='is_live' 都表示正在直播
-            return info.get('is_live') or info.get('live_status') == 'is_live'
-    except Exception:
-        return False
-
-
-def get_channel_live_streams(channel_url):
-    """
-    访问频道的 /live 页面，提取当前所有候选直播，
-    并过滤掉未在直播的视频。
-    """
-    live_url = channel_url.rstrip('/') + '/live'
-    ydl_opts = {
-        'extract_flat': True,      # 只提取列表，不深入每个视频，速度快
-        'quiet': True,
-        'no_warnings': True,
-        'playlistend': 5,          # 每个频道最多检查前 5 个，防止意外爆炸
-    }
-
-    candidates = []
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            result = ydl.extract_info(live_url, download=False)
-
-            if not result:
-                return []
-
-            # 情况 A：/live 直接重定向到单个直播视频
-            if result.get('_type') != 'playlist' and 'id' in result:
-                candidates.append({
-                    'title': result.get('title', 'Unknown'),
-                    'url': result.get('webpage_url') or result.get('url') or f"https://www.youtube.com/watch?v={result['id']}"
-                })
-            # 情况 B：/live 是一个播放列表页面
-            elif 'entries' in result:
-                for entry in result['entries']:
-                    if not entry or not entry.get('id'):
-                        continue
-                    candidates.append({
-                        'title': entry.get('title', 'Unknown'),
-                        'url': entry.get('url') or f"https://www.youtube.com/watch?v={entry['id']}"
-                    })
+        output = run_cmd([
+            "yt-dlp",
+            "--dump-single-json",
+            "--no-warnings",
+            live_url
+        ])
     except Exception as e:
-        print(f"  解析频道页面失败: {e}")
-        return []
+        print(f"获取直播信息失败: {channel_url}")
+        print(e)
+        return None, None
 
-    # 二次校验：确保视频真的在直播
-    live_streams = []
-    for cand in candidates:
-        short_title = cand['title'][:50]
-        print(f"  检查直播状态: {short_title}...")
-        if is_currently_live(cand['url']):
-            live_streams.append(cand)
-        else:
-            print(f"    -> 未在直播，跳过")
+    if not output:
+        return None, None
 
-    return live_streams
+    import json
+    data = json.loads(output)
+
+    webpage_url = data.get("webpage_url") or data.get("original_url")
+    title = data.get("title")
+
+    if not webpage_url or "watch?v=" not in webpage_url:
+        return None, None
+
+    return webpage_url, title
 
 
 def get_best_stream(url):
     try:
-        s = streams(url)
-        if "best" not in s:
+        output = run_cmd([
+            "yt-dlp",
+            "-g",
+            "--user-agent",
+            "Mozilla/5.0",
+            url
+        ])
+
+        if not output:
             return None
-        return s["best"].url
+
+        return output.splitlines()[0]
+
     except Exception as e:
-        print(f"  获取直播源失败: {e}")
+        print(f"获取流失败: {url}")
+        print(e)
         return None
-
-
-def sanitize_title(title):
-    """清理 M3U 标题里的换行符等危险字符"""
-    return title.replace('\n', ' ').replace('\r', '').strip()
 
 
 def git_push():
     try:
         subprocess.run(["git", "add", "."], check=True)
+
         msg = f"update {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        subprocess.run(["git", "commit", "-m", msg], check=True)
+        commit = subprocess.run(
+            ["git", "commit", "-m", msg],
+            capture_output=True,
+            text=True
+        )
+
+        if commit.returncode != 0:
+            if "nothing to commit" in commit.stdout or "nothing to commit" in commit.stderr:
+                print("没有变化，跳过 commit 和 push")
+                return
+            raise subprocess.CalledProcessError(
+                commit.returncode, commit.args, commit.stdout, commit.stderr
+            )
+
         subprocess.run(["git", "push"], check=True)
         print("已推送到 Git 仓库")
     except subprocess.CalledProcessError as e:
         print("Git 操作失败:", e)
 
 
+def sanitize_title(title):
+    if not title:
+        return "未命名直播间"
+    return re.sub(r"[\r\n]+", " ", title).strip()
+
+
 def generate_playlist():
     playlist = "#EXTM3U\n\n"
-    total = 0
 
     for channel in CHANNELS:
-        name = channel["name"]
-        url = channel["channel_url"]
+        base_name = channel["name"]
+        channel_url = channel["channel_url"]
 
-        print(f"\n[{name}] 正在解析频道...")
+        print(f"正在查找直播: {base_name}")
 
-        live_streams = get_channel_live_streams(url)
+        live_video_url, live_title = get_live_video_info(channel_url)
 
-        if not live_streams:
-            print(f"[{name}] 未找到正在直播的内容")
+        if not live_video_url:
+            print(f"未找到直播: {base_name}")
             continue
 
-        for live in live_streams:
-            live_title = sanitize_title(live['title'])
-            display_name = f"{name}-{live_title}"
+        print(f"找到直播: {live_title}")
+        stream_url = get_best_stream(live_video_url)
 
-            print(f"[{name}] 获取直播源: {live_title[:40]}")
-            stream_url = get_best_stream(live['url'])
-
-            if stream_url:
-                print(f"[{name}] 成功")
-                playlist += f"#EXTINF:-1,{display_name}\n{stream_url}\n\n"
-                total += 1
-            else:
-                print(f"[{name}] 失败: 无法提取直播源")
+        if stream_url:
+            full_name = f"{base_name}-{sanitize_title(live_title)}"
+            print(f"成功: {full_name}")
+            playlist += f"#EXTINF:-1,{full_name}\n{stream_url}\n\n"
+        else:
+            print(f"流解析失败: {base_name}")
 
     with open("playlist.m3u", "w", encoding="utf-8") as f:
         f.write(playlist)
 
-    print(f"\n已生成 playlist.m3u，共 {total} 个直播源")
+    print("\n已生成 playlist.m3u")
     git_push()
 
 
 if __name__ == "__main__":
     generate_playlist()
+
