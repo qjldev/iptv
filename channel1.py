@@ -35,13 +35,18 @@ def get_stream_info(url):
     try:
         # 创建 Streamlink 会话
         session = streamlink.Streamlink()
-        # 解析网址获取对应的插件
-        plugin = session.resolve_url(url)
         
-        if not plugin:
+        # resolve_url 返回的是一个元组: (plugin_class, resolved_url)
+        match = session.resolve_url(url)
+        if not match:
             print(f"Streamlink 无法解析此网址: {url}")
             return None, None
             
+        plugin_class, resolved_url = match
+        
+        # 实例化插件对象
+        plugin = plugin_class(session, resolved_url)
+        
         # 获取所有清晰度的流
         streams = plugin.streams()
         
@@ -60,6 +65,8 @@ def get_stream_info(url):
         print(e)
         return None, None
 
+
+    
 def git_push():
     try:
         subprocess.run(["git", "add", "."], check=True)
