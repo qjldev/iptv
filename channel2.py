@@ -18,34 +18,39 @@ CHANNELS = [
 
 ]
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0"
-}
 
-
-def get_live_url_and_title(channel_url):
+def get_live_info(channel_url):
+    """
+    从频道 /streams 中找正在直播的视频
+    """
     try:
-        url = channel_url.rstrip("/") + "/streams"
+        ydl_opts = {
+            "quiet": True,
+            "skip_download": True,
+            "extract_flat": True
+        }
 
-        r = requests.get(url, headers=HEADERS, timeout=15)
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(channel_url + "/streams", download=False)
 
-        html = r.text
+            entries = info.get("entries", [])
 
-        # 找直播链接
-        live_match = re.search(r'"/watch\?v=([^"]+)"', html)
+            for e in entries:
+                if not e:
+                    continue
 
-        # 找标题
-        title_match = re.search(r'"title":{"runs":\[\{"text":"([^"]+)"', html)
+                # 关键：只要正在直播
+                if e.get("is_live"):
+                    url = e.get("url") or e.get("webpage_url")
+                    title = e.get("title")
+                    
+                    # 有些返回是 video id
+                    if url and "youtube.com" not in url:
+                        url = f"https://www.youtube.com/watch?v={url}"
 
-        if not live_match:
-            return None, None
+                    return url, title
 
-        video_id = live_match.group(1)
-        title = title_match.group(1) if title_match else "直播"
-
-        live_url = f"https://www.youtube.com/watch?v={video_id}"
-
-        return live_url, title
+        return None, None
 
     except Exception as e:
         print("获取直播失败:", channel_url)
@@ -54,16 +59,17 @@ def get_live_url_and_title(channel_url):
 
 
 def get_best_stream(url):
+    """
+    用 streamlink 获取真实播放源
+    """
     try:
         s = streams(url)
-
         if "best" not in s:
             return None
-
         return s["best"].url
 
     except Exception as e:
-        print(f"解析失败: {url}")
+        print("解析流失败:", url)
         print(e)
         return None
 
@@ -73,46 +79,43 @@ def git_push():
         subprocess.run(["git", "add", "."], check=True)
 
         msg = f"update {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-
         subprocess.run(["git", "commit", "-m", msg], check=True)
-
         subprocess.run(["git", "push"], check=True)
 
         print("已推送 Git")
 
     except subprocess.CalledProcessError as e:
-        print("Git 操作失败:", e)
+        print("Git 失败:", e)
 
 
 def generate_playlist():
     playlist = "#EXTM3U\n\n"
 
-    for channel in CHANNELS:
+    for c in CHANNELS:
+        name = c["name"]
+        channel_url = c["channel"]
 
-        custom_name = channel["name"]
-        channel_url = channel["channel"]
+        print(f"\n检查频道: {name}")
 
-        print(f"检查频道: {custom_name}")
-
-        live_url, live_title = get_live_url_and_title(channel_url)
+        live_url, live_title = get_live_info(channel_url)
 
         if not live_url:
-            print("当前没有直播")
+            print("没有直播")
             continue
 
-        print("直播间:", live_title)
+        print("直播标题:", live_title)
 
         stream_url = get_best_stream(live_url)
 
         if not stream_url:
-            print("解析直播流失败")
+            print("无法解析流")
             continue
 
-        final_name = f"{custom_name}-{live_title}"
+        final_name = f"{name}-{live_title}"
 
         playlist += f"#EXTINF:-1,{final_name}\n{stream_url}\n\n"
 
-        print("成功添加:", final_name)
+        print("添加成功:", final_name)
 
     with open("playlist.m3u", "w", encoding="utf-8") as f:
         f.write(playlist)
