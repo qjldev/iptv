@@ -18,7 +18,8 @@ CHANNELS = [
     {"name": "China Zone", "url": "https://www.youtube.com/@ChinaZoneDrama"},
     {"name": "台视时光机", "url": "https://www.youtube.com/@TTVClassic"},
     {"name": "华视戏剧频道", "url": "https://www.youtube.com/@cts_drama"},
-    {"name": "酷看独播剧场", "url": "https://www.youtube.com/@KukanDrama"}
+    {"name": "酷看独播剧场", "url": "https://www.youtube.com/@KukanDrama"},
+    {"name": "影视剧汇踪", "url": "https://www.youtube.com/@影视剧汇踪"}
 
 ]
 

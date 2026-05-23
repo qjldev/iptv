@@ -15,7 +15,7 @@ CHANNELS = [
     {"name": "台视时光机", "channel": "https://www.youtube.com/@TTVClassic"},
     {"name": "华视戏剧频道", "channel": "https://www.youtube.com/@cts_drama"},
     {"name": "酷看独播剧场", "channel": "https://www.youtube.com/@KukanDrama"}
-
+	
 ]
 
 def get_live_from_channel(channel_url):
