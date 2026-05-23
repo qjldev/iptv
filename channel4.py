@@ -1,8 +1,7 @@
-from streamlink import streams
 import subprocess
 import datetime
 import re
-
+import json
 
 
 CHANNELS = [
@@ -18,12 +17,6 @@ CHANNELS = [
     {"name": "影视剧汇踪", "channel_url": "https://www.youtube.com/@影视剧汇踪"}
 
 ]
-
-
-
-
-
-
 
 
 def run_cmd(cmd):
@@ -51,9 +44,7 @@ def get_live_video_info(channel_url):
     if not output:
         return None, None
 
-    import json
     data = json.loads(output)
-
     webpage_url = data.get("webpage_url") or data.get("original_url")
     title = data.get("title")
 
@@ -63,26 +54,27 @@ def get_live_video_info(channel_url):
     return webpage_url, title
 
 
-
 def get_best_stream(url):
     try:
         output = run_cmd([
             "yt-dlp",
             "-g",
-            "-f", "best[protocol^=m3u8]/best",
+            "-f",
+            "best[protocol=m3u8]/best",
             "--no-warnings",
             url
         ])
 
-        if not output:
-            return None
+        for line in output.splitlines():
+            line = line.strip()
+            if line.startswith("http"):
+                return line
 
-        return output.splitlines()[0]
-
-    except Exception as e:
-        print("❌ yt-dlp失败:", e)
         return None
-
+    except Exception as e:
+        print(f"获取流失败: {url}")
+        print(e)
+        return None
 
 
 def git_push():
@@ -97,7 +89,8 @@ def git_push():
         )
 
         if commit.returncode != 0:
-            if "nothing to commit" in commit.stdout or "nothing to commit" in commit.stderr:
+            content = f"{commit.stdout}\n{commit.stderr}"
+            if "nothing to commit" in content:
                 print("没有变化，跳过 commit 和 push")
                 return
             raise subprocess.CalledProcessError(
@@ -124,22 +117,22 @@ def generate_playlist():
         channel_url = channel["channel_url"]
 
         print(f"正在查找直播: {base_name}")
-
         live_video_url, live_title = get_live_video_info(channel_url)
 
         if not live_video_url:
             print(f"未找到直播: {base_name}")
             continue
 
-        print(f"找到直播: {live_title}")
-        stream_url = get_best_stream(live_video_url)
+        full_name = f"{base_name}-{sanitize_title(live_title)}"
+        print(f"找到直播: {full_name}")
 
-        if stream_url:
-            full_name = f"{base_name}-{sanitize_title(live_title)}"
-            print(f"成功: {full_name}")
-            playlist += f"#EXTINF:-1,{full_name}\n{stream_url}\n\n"
-        else:
-            print(f"流解析失败: {base_name}")
+        stream_url = get_best_stream(live_video_url)
+        if not stream_url:
+            print(f"流解析失败: {full_name}")
+            continue
+
+        print(f"成功: {full_name}")
+        playlist += f"#EXTINF:-1,{full_name}\n{stream_url}\n\n"
 
     with open("playlist.m3u", "w", encoding="utf-8") as f:
         f.write(playlist)
