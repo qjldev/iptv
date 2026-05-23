@@ -33,27 +33,33 @@ def get_stream_info(url):
     解析直播源，返回 (直播间标题, m3u8链接)
     """
     try:
-        # 创建 Streamlink 会话
         session = streamlink.Streamlink()
-        
-        # resolve_url 返回的是一个元组: (plugin_class, resolved_url)
         match = session.resolve_url(url)
+        
         if not match:
             print(f"Streamlink 无法解析此网址: {url}")
             return None, None
             
-        plugin_class, resolved_url = match
+        # 根据返回值的数量进行安全解包（兼容新老版本 Streamlink）
+        if len(match) == 3:
+            plugin_name, plugin_class, resolved_url = match
+        elif len(match) == 2:
+            plugin_class, resolved_url = match
+        else:
+            # 极限兜底：提取类和网址
+            plugin_class = match[1]
+            resolved_url = match[-1]
         
         # 实例化插件对象
         plugin = plugin_class(session, resolved_url)
         
-        # 获取所有清晰度的流
+        # 获取流
         streams = plugin.streams()
         
         if "best" not in streams:
             return None, None
             
-        # 提取直播间真实标题，如果获取失败则给个默认值
+        # 提取标题
         title = plugin.get_title()
         if not title:
             title = "未知标题"
@@ -64,7 +70,6 @@ def get_stream_info(url):
         print(f"获取失败: {url}")
         print(e)
         return None, None
-
 
     
 def git_push():
