@@ -66,9 +66,18 @@ def get_stream_info(url):
             
         return title, streams["best"].url
         
+    except streamlink.exceptions.NoPluginError:
+        print(f"获取失败: 不支持的网址格式 {url}")
+        return None, None
+    except streamlink.exceptions.PluginError as e:
+        # 这里专门捕获 YouTube 解析不到 videoId 的错误，通常是因为没开播
+        if "Could not find videoId" in str(e):
+            print(f"频道未开播或无法解析: {url}")
+        else:
+            print(f"插件解析错误: {e}")
+        return None, None
     except Exception as e:
-        print(f"获取失败: {url}")
-        print(e)
+        print(f"未知错误: {url} -> {e}")
         return None, None
 
     
