@@ -1,101 +1,86 @@
-import subprocess
 import datetime
+import subprocess
 import re
-import json
+import requests
 
+from streamlink import streams
+from googleapiclient.discovery import build
+
+# ========= 配置区 =========
+YOUTUBE_API_KEY = "你的API密钥"  # 换成你自己的
 
 CHANNELS = [
-    {"name": "CCTV", "channel_url": "https://www.youtube.com/@CCTVDrama"},
-    {"name": "乐视", "channel_url": "https://www.youtube.com/@letvdramas"},
-    {"name": "百纳", "channel_url": "https://www.youtube.com/@BainationTVSeriesOfficial"},
-    {"name": "后宫甄嬛传", "channel_url": "https://www.youtube.com/@LegendofConcubineZhenHuan"},
-    {"name": "三立化剧", "channel_url": "https://www.youtube.com/@SETdrama"},
-    {"name": "China Zone", "channel_url": "https://www.youtube.com/@ChinaZoneDrama"},
-    {"name": "台视时光机", "channel_url": "https://www.youtube.com/@TTVClassic"},
-    {"name": "华视戏剧频道", "channel_url": "https://www.youtube.com/@cts_drama"},
-    {"name": "酷看独播剧场", "channel_url": "https://www.youtube.com/@KukanDrama"},
-    {"name": "影视剧汇踪", "channel_url": "https://www.youtube.com/@影视剧汇踪"}
-
+    {
+        "name": "CCTV",
+        "channel_url": "https://www.youtube.com/@CCTVDrama",
+        "channel_id": "UC_xxx",  # 先用脚本或手动查好
+    },
+    {
+        "name": "乐视",
+        "channel_url": "https://www.youtube.com/@letvdramas",
+        "channel_id": "UC_yyy",
+    },
+    # ……其它频道同理
 ]
 
+# ========= 工具函数 =========
 
-def run_cmd(cmd):
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
-    return result.stdout.strip()
+def get_channel_id_from_url(channel_url: str) -> str:
+    """从频道页 URL 解析 channelId"""
+    resp = requests.get(channel_url, timeout=10)
+    resp.raise_for_status()
+    html = resp.text
+
+    m = re.search(r'<meta\s+itemprop="channelId"\s+content="([^"]+)"', html)
+    if not m:
+        raise ValueError(f"无法从 {channel_url} 解析 channelId")
+    return m.group(1)
 
 
-def get_live_video_info(channel_url):
-    live_url = channel_url.rstrip("/") + "/live"
+def get_live_streams_for_channel(channel_id: str):
+    """返回该频道当前正在直播的列表：[{video_id, title, url}, ...]"""
+    youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
 
-    try:
-        output = run_cmd([
-            "yt-dlp",
-            "--dump-single-json",
-            "--no-warnings",
-            live_url
-        ])
-    except Exception as e:
-        print(f"获取直播信息失败: {channel_url}")
-        print(e)
-        return None, None
+    request = youtube.liveBroadcasts().list(
+        part="snippet,status",
+        broadcastStatus="active",
+        channelId=channel_id,
+        maxResults=10,
+    )
+    response = request.execute()
 
-    if not output:
-        return None, None
-
-    data = json.loads(output)
-    webpage_url = data.get("webpage_url") or data.get("original_url")
-    title = data.get("title")
-
-    if not webpage_url or "watch?v=" not in webpage_url:
-        return None, None
-
-    return webpage_url, title
+    lives = []
+    for item in response.get("items", []):
+        vid = item["id"]
+        title = item["snippet"]["title"]
+        lives.append({
+            "video_id": vid,
+            "title": title,
+            "url": f"https://www.youtube.com/watch?v={vid}",
+        })
+    return lives
 
 
 def get_best_stream(url):
+    """用 Streamlink 获取 best 流地址"""
     try:
-        output = run_cmd([
-            "yt-dlp",
-            "-g",
-            "-f",
-            "best[protocol=m3u8]/best",
-            "--no-warnings",
-            url
-        ])
-
-        for line in output.splitlines():
-            line = line.strip()
-            if line.startswith("http"):
-                return line
-
-        return None
+        s = streams(url)
+        if "best" not in s:
+            return None
+        return s["best"].url
     except Exception as e:
-        print(f"获取流失败: {url}")
+        print(f"获取失败: {url}")
         print(e)
         return None
 
 
 def git_push():
+    """git add/commit/push"""
     try:
         subprocess.run(["git", "add", "."], check=True)
 
         msg = f"update {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        commit = subprocess.run(
-            ["git", "commit", "-m", msg],
-            capture_output=True,
-            text=True
-        )
-
-        if commit.returncode != 0:
-            content = f"{commit.stdout}\n{commit.stderr}"
-            if "nothing to commit" in content:
-                print("没有变化，跳过 commit 和 push")
-                return
-            raise subprocess.CalledProcessError(
-                commit.returncode, commit.args, commit.stdout, commit.stderr
-            )
+        subprocess.run(["git", "commit", "-m", msg], check=True)
 
         subprocess.run(["git", "push"], check=True)
         print("已推送到 Git 仓库")
@@ -103,41 +88,59 @@ def git_push():
         print("Git 操作失败:", e)
 
 
-def sanitize_title(title):
-    if not title:
-        return "未命名直播间"
-    return re.sub(r"[\r\n]+", " ", title).strip()
-
+# ========= 主流程 =========
 
 def generate_playlist():
     playlist = "#EXTM3U\n\n"
 
     for channel in CHANNELS:
-        base_name = channel["name"]
-        channel_url = channel["channel_url"]
+        name = channel["name"]
+        channel_id = channel.get("channel_id")
 
-        print(f"正在查找直播: {base_name}")
-        live_video_url, live_title = get_live_video_info(channel_url)
+        # 如果没有 channel_id，先尝试从 channel_url 解析一次（建议提前跑好，不要每次都解析）
+        if not channel_id:
+            print(f"[{name}] 没有 channel_id，尝试从 {channel['channel_url']} 解析...")
+            try:
+                channel_id = get_channel_id_from_url(channel["channel_url"])
+                channel["channel_id"] = channel_id  # 缓存到字典里，后续可用
+                print(f"[{name}] 解析到 channelId: {channel_id}")
+            except Exception as e:
+                print(f"[{name}] 解析 channelId 失败，跳过该频道：{e}")
+                continue
 
-        if not live_video_url:
-            print(f"未找到直播: {base_name}")
+        print(f"[{name}] 查询当前直播...")
+
+        try:
+            live_streams = get_live_streams_for_channel(channel_id)
+        except Exception as e:
+            print(f"[{name}] 调用 YouTube API 失败，跳过：{e}")
             continue
 
-        full_name = f"{base_name}-{sanitize_title(live_title)}"
-        print(f"找到直播: {full_name}")
-
-        stream_url = get_best_stream(live_video_url)
-        if not stream_url:
-            print(f"流解析失败: {full_name}")
+        if not live_streams:
+            print(f"[{name}] 当前没有直播")
             continue
 
-        print(f"成功: {full_name}")
-        playlist += f"#EXTINF:-1,{full_name}\n{stream_url}\n\n"
+        for stream in live_streams:
+            video_url = stream["url"]
+            stream_title = stream["title"]
+
+            print(f"  正在解析: {name}-{stream_title}")
+
+            stream_url = get_best_stream(video_url)
+
+            if stream_url:
+                display_name = f"{name}-{stream_title}"
+                playlist += f"#EXTINF:-1,{display_name}\n{stream_url}\n\n"
+                print(f"  成功: {display_name}")
+            else:
+                print(f"  失败: {name}-{stream_title}")
 
     with open("playlist.m3u", "w", encoding="utf-8") as f:
         f.write(playlist)
 
     print("\n已生成 playlist.m3u")
+
+    # 自动推送到 Git
     git_push()
 
 
