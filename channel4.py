@@ -5,16 +5,16 @@ import re
 
 
 CHANNELS = [
-    {"name": "CCTV", "channel_url": "https://www.youtube.com/@CCTVDrama"},
-    {"name": "乐视", "channel_url": "https://www.youtube.com/@letvdramas"},
-    {"name": "百纳", "channel_url": "https://www.youtube.com/@BainationTVSeriesOfficial"},
-    {"name": "后宫甄嬛传", "channel_url": "https://www.youtube.com/@LegendofConcubineZhenHuan"},
-    {"name": "三立化剧", "channel_url": "https://www.youtube.com/@SETdrama"},
-    {"name": "China Zone", "channel_url": "https://www.youtube.com/@ChinaZoneDrama"},
-    {"name": "台视时光机", "channel_url": "https://www.youtube.com/@TTVClassic"},
-    {"name": "华视戏剧频道", "channel_url": "https://www.youtube.com/@cts_drama"},
-    {"name": "酷看独播剧场", "channel_url": "https://www.youtube.com/@KukanDrama"},
-    {"name": "影视剧汇踪", "channel_url": "https://www.youtube.com/@影视剧汇踪"}
+    {"name": "CCTV", "channel_url": "https://www.youtube.com/@CCTVDrama/streams"},
+    {"name": "乐视", "channel_url": "https://www.youtube.com/@letvdramas/streams"},
+    {"name": "百纳", "channel_url": "https://www.youtube.com/@BainationTVSeriesOfficial/streams"},
+    {"name": "后宫甄嬛传", "channel_url": "https://www.youtube.com/@LegendofConcubineZhenHuan/streams"},
+    {"name": "三立化剧", "channel_url": "https://www.youtube.com/@SETdrama/streams"},
+    {"name": "China Zone", "channel_url": "https://www.youtube.com/@ChinaZoneDrama/streams"},
+    {"name": "台视时光机", "channel_url": "https://www.youtube.com/@TTVClassic/streams"},
+    {"name": "华视戏剧频道", "channel_url": "https://www.youtube.com/@cts_drama/streams"},
+    {"name": "酷看独播剧场", "channel_url": "https://www.youtube.com/@KukanDrama/streams"},
+    {"name": "影视剧汇踪", "channel_url": "https://www.youtube.com/@影视剧汇踪/streams"}
 ]
 
 
@@ -28,14 +28,13 @@ def run_cmd(cmd):
 
 
 def get_live_video_info(channel_url):
-    live_url = channel_url.rstrip("/") + "/live"
-
     try:
         output = run_cmd([
             "yt-dlp",
             "--dump-single-json",
+            "--playlist-items", "1",
             "--no-warnings",
-            live_url
+            channel_url
         ])
     except Exception as e:
         print(f"获取直播信息失败: {channel_url}")
@@ -48,14 +47,20 @@ def get_live_video_info(channel_url):
     import json
     data = json.loads(output)
 
-    webpage_url = data.get("webpage_url") or data.get("original_url")
-    title = data.get("title")
+    entries = data.get("entries")
 
-    if not webpage_url or "watch?v=" not in webpage_url:
+    if not entries:
+        return None, None
+
+    video = entries[0]
+
+    webpage_url = video.get("webpage_url")
+    title = video.get("title")
+
+    if not webpage_url:
         return None, None
 
     return webpage_url, title
-
 
 def get_best_stream(url):
     try:
