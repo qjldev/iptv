@@ -18,58 +18,54 @@ CHANNELS = [
 
 ]
 
+def get_live_from_channel(channel_url):
+    """
+    用 yt-dlp 直接抓频道正在直播的视频
+    """
+    ydl_opts = {
+        "quiet": True,
+        "skip_download": True,
+        "extract_flat": False
+    }
 
-def get_live_info(channel_url):
-    """
-    从频道 /streams 中找正在直播的视频
-    """
     try:
-        ydl_opts = {
-            "quiet": True,
-            "skip_download": True,
-            "extract_flat": True
-        }
-
         with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(channel_url + "/streams", download=False)
+            info = ydl.extract_info(channel_url, download=False)
 
+            # 有些频道结构是 entries
             entries = info.get("entries", [])
 
             for e in entries:
                 if not e:
                     continue
 
-                # 关键：只要正在直播
+                # 判断是否直播
                 if e.get("is_live"):
-                    url = e.get("url") or e.get("webpage_url")
                     title = e.get("title")
-                    
-                    # 有些返回是 video id
-                    if url and "youtube.com" not in url:
-                        url = f"https://www.youtube.com/watch?v={url}"
+                    video_id = e.get("id")
 
+                    if not video_id:
+                        continue
+
+                    url = f"https://www.youtube.com/watch?v={video_id}"
                     return url, title
 
         return None, None
 
     except Exception as e:
-        print("获取直播失败:", channel_url)
+        print("获取频道失败:", channel_url)
         print(e)
         return None, None
 
 
 def get_best_stream(url):
-    """
-    用 streamlink 获取真实播放源
-    """
     try:
         s = streams(url)
         if "best" not in s:
             return None
         return s["best"].url
-
     except Exception as e:
-        print("解析流失败:", url)
+        print(f"解析失败: {url}")
         print(e)
         return None
 
@@ -85,7 +81,7 @@ def git_push():
         print("已推送 Git")
 
     except subprocess.CalledProcessError as e:
-        print("Git 失败:", e)
+        print("Git 操作失败:", e)
 
 
 def generate_playlist():
@@ -97,10 +93,10 @@ def generate_playlist():
 
         print(f"\n检查频道: {name}")
 
-        live_url, live_title = get_live_info(channel_url)
+        live_url, live_title = get_live_from_channel(channel_url)
 
         if not live_url:
-            print("没有直播")
+            print("当前没有直播")
             continue
 
         print("直播标题:", live_title)
@@ -108,7 +104,7 @@ def generate_playlist():
         stream_url = get_best_stream(live_url)
 
         if not stream_url:
-            print("无法解析流")
+            print("解析失败")
             continue
 
         final_name = f"{name}-{live_title}"
