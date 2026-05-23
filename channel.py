@@ -7,11 +7,12 @@ import yt_dlp
 from streamlink import streams
 
 
-# 这里只填写频道 ID
+# 这里只需要填写 @ 后面的部分
 # 例如：
-# @CCTVDrama
-# @ChinaZoneDrama
-# @XXX
+# CCTVDrama
+# ChinaZoneDrama
+# @ 不需要写
+# /streams 不需要写
 
 CHANNELS = [
     "CCTVDrama",                    #CCTV
@@ -30,22 +31,22 @@ CHANNELS = [
 ]
 
 
-def build_channel_url(channel_id):
 
-    return f"https://www.youtube.com/@{channel_id}/streams"
+
+
+
+def build_live_url(channel_id):
+
+    return f"https://www.youtube.com/@{channel_id}/live"
 
 
 def extract_drama_name(title):
-    """
-    提取电视剧名称
-    优先：
-    【xxx】
-    《xxx》
-    """
 
     patterns = [
         r'【(.*?)】',
-        r'《(.*?)》'
+        r'《(.*?)》',
+        r'（(.*?)）',
+        r'\((.*?)\)'
     ]
 
     for pattern in patterns:
@@ -53,16 +54,17 @@ def extract_drama_name(title):
         match = re.search(pattern, title)
 
         if match:
-            return match.group(1)
+            return match.group(1).strip()
 
-    return title
+    return title.strip()
 
 
-def get_live_info(channel_url):
+def get_live_info(channel_id):
+
+    live_url = build_live_url(channel_id)
 
     ydl_opts = {
         "quiet": True,
-        "extract_flat": True,
         "skip_download": True
     }
 
@@ -71,39 +73,33 @@ def get_live_info(channel_url):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
 
             info = ydl.extract_info(
-                channel_url,
+                live_url,
                 download=False
             )
 
-            # 自动获取频道名
+            # 没开播
+            if not info:
+                return None
+
             channel_name = (
                 info.get("channel")
                 or info.get("uploader")
-                or "Unknown"
+                or channel_id
             )
 
-            entries = info.get("entries", [])
+            live_title = info.get("title", "")
 
-            for entry in entries:
+            video_url = info.get("webpage_url")
 
-                # 找正在直播的
-                if entry.get("live_status") == "is_live":
-
-                    live_title = entry.get("title", "")
-
-                    video_url = (
-                        f"https://www.youtube.com/watch?v={entry['id']}"
-                    )
-
-                    return {
-                        "channel_name": channel_name,
-                        "live_title": live_title,
-                        "video_url": video_url
-                    }
+            return {
+                "channel_name": channel_name,
+                "live_title": live_title,
+                "video_url": video_url
+            }
 
     except Exception as e:
 
-        print("获取直播信息失败:")
+        print(f"{channel_id} 当前未开播")
         print(e)
 
     return None
@@ -169,14 +165,9 @@ def generate_playlist():
 
     for channel_id in CHANNELS:
 
-        if not channel_id:
-            continue
-
-        channel_url = build_channel_url(channel_id)
-
         print(f"正在检查频道: {channel_id}")
 
-        live_info = get_live_info(channel_url)
+        live_info = get_live_info(channel_id)
 
         if not live_info:
 
@@ -184,16 +175,12 @@ def generate_playlist():
             continue
 
         channel_name = live_info["channel_name"]
-
         live_title = live_info["live_title"]
-
         video_url = live_info["video_url"]
 
         drama_name = extract_drama_name(live_title)
 
-        final_name = (
-            f"{channel_name} - {drama_name}"
-        )
+        final_name = f"{channel_name} - {drama_name}"
 
         print(f"正在获取直播源: {final_name}")
 
@@ -204,21 +191,12 @@ def generate_playlist():
             print("直播源获取失败")
             continue
 
-        playlist += (
-            f"#EXTINF:-1,{final_name}\n"
-        )
-
-        playlist += (
-            f"{stream_url}\n\n"
-        )
+        playlist += f"#EXTINF:-1,{final_name}\n"
+        playlist += f"{stream_url}\n\n"
 
         print(f"成功: {final_name}")
 
-    with open(
-        "playlist.m3u",
-        "w",
-        encoding="utf-8"
-    ) as f:
+    with open("playlist.m3u", "w", encoding="utf-8") as f:
 
         f.write(playlist)
 
@@ -235,11 +213,6 @@ if __name__ == "__main__":
 
         generate_playlist()
 
-        print(
-            "\n========== "
-            "5分钟后再次刷新 "
-            "==========\n"
-        )
+        print("\n========== 5分钟后再次刷新 ==========\n")
 
-        # 5分钟刷新一次
         time.sleep(300)
