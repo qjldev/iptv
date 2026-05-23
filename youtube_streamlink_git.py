@@ -6,7 +6,7 @@ import datetime
 CHANNELS = [
 {
         "name": "潜伏",
-        "url": "https://www.youtube.com/watch?v=a-XpSWzP7JE"
+        "url": "https://www.youtube.com/watch?v=FGD2_4A7z2M"
     },
     {
         "name": "甄嬛传",
