@@ -33,44 +33,67 @@ def run_cmd(cmd):
     return result.stdout.strip()
 
 
-def get_live_video_info(channel_url):
+def get_live_videos(channel_url):
     try:
         output = run_cmd([
             "yt-dlp",
             "--dump-single-json",
-            "--playlist-items", "1",
-            "--match-filter", "is_live",
+            "--flat-playlist",
             "--no-warnings",
             channel_url
         ])
 
     except Exception as e:
-        print(f"获取直播信息失败: {channel_url}")
+        print(f"获取频道失败: {channel_url}")
         print(e)
-        return None, None
+        return []
 
     if not output:
-        return None, None
+        return []
 
     try:
         data = json.loads(output)
     except Exception:
-        return None, None
+        return []
 
-    entries = data.get("entries")
+    entries = data.get("entries", [])
 
-    if not entries:
-        return None, None
+    live_videos = []
 
-    video = entries[0]
+    for entry in entries:
+        video_id = entry.get("id")
+        title = entry.get("title", "")
 
-    webpage_url = video.get("webpage_url")
-    title = video.get("title")
+        if not video_id:
+            continue
 
-    if not webpage_url:
-        return None, None
+        video_url = f"https://www.youtube.com/watch?v={video_id}"
 
-    return webpage_url, title
+        try:
+            info_output = run_cmd([
+                "yt-dlp",
+                "--dump-single-json",
+                "--no-warnings",
+                video_url
+            ])
+
+            info = json.loads(info_output)
+
+            # 一旦遇到非直播，后面通常也不是直播
+            if not info.get("is_live"):
+                print("检测到非直播，停止扫描")
+                break
+
+            live_videos.append({
+                "url": video_url,
+                "title": title
+            })
+
+        except Exception:
+            print("解析视频失败，停止扫描")
+            break
+
+    return live_videos
 
 
 def get_best_stream(url):
@@ -155,31 +178,39 @@ def generate_playlist():
         base_name = channel["name"]
         channel_url = channel["channel_url"]
 
-        print(f"\n正在查找直播: {base_name}")
+        print(f"\n正在扫描频道: {base_name}")
 
-        live_video_url, live_title = get_live_video_info(channel_url)
+        live_videos = get_live_videos(channel_url)
 
-        if not live_video_url:
-            print(f"未找到直播: {base_name}")
+        if not live_videos:
+            print("当前没有直播")
             continue
 
-        print(f"找到直播: {live_title}")
+        print(f"发现 {len(live_videos)} 个直播")
 
-        stream_url = get_best_stream(live_video_url)
+        for video in live_videos:
+            live_title = video["title"]
+            live_video_url = video["url"]
 
-        if not stream_url:
-            print(f"流解析失败: {base_name}")
-            continue
+            print(f"正在解析: {live_title}")
 
-        full_name = f"{base_name}-{sanitize_title(live_title)}"
+            stream_url = get_best_stream(live_video_url)
 
-        print(f"成功: {full_name}")
+            if not stream_url:
+                print("流解析失败")
+                continue
 
-        playlist += (
-            f'#EXTINF:-1 group-title="电视剧",{full_name}\n'
-            f"{stream_url}\n\n"
-        )
+            full_name = f"{base_name}-{sanitize_title(live_title)}"
 
+            print(f"成功: {full_name}")
+
+            # 生成 m3u8 风格频道列表
+            playlist += (
+                f'#EXTINF:-1 tvg-name="{full_name}" group-title="电视剧",{full_name}\n'
+                f"{stream_url}\n\n"
+            )
+
+    # 输出 m3u8 文件
     with open("playlist.m3u8", "w", encoding="utf-8") as f:
         f.write(playlist)
 
