@@ -26,7 +26,7 @@ CHANNELS = [
     },  
     {
         "name": "汉武大帝",
-        "url": "https://www.youtube.com/watch?v=JQdMw93ouv4"
+        "url": "https://www.youtube.com/watch?v=ODndCtNkSi4"
     },
     {
         "name": "西游记",
