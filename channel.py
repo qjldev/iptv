@@ -204,21 +204,18 @@ def generate_playlist():
 
             print(f"成功: {full_name}")
 
-            # 生成 m3u8 风格频道列表
             playlist += (
-                f'#EXTINF:-1 tvg-name="{full_name}" group-title="电视剧",{full_name}\n'
+                f'#EXTINF:-1 group-title="电视剧",{full_name}\n'
                 f"{stream_url}\n\n"
             )
 
-    # 输出 m3u8 文件
-    with open("playlist.m3u8", "w", encoding="utf-8") as f:
+    with open("playlist.m3u", "w", encoding="utf-8") as f:
         f.write(playlist)
 
-    print("\n已生成 playlist.m3u8")
+    print("\n已生成 playlist.m3u")
 
     git_push()
 
 
 if __name__ == "__main__":
     generate_playlist()
-
