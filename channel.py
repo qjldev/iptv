@@ -209,7 +209,7 @@ def generate_playlist():
                 f"{stream_url}\n\n"
             )
 
-    with open("playlist.m3u", "w", encoding="utf-8") as f:
+    with open("playlist.m3u8", "w", encoding="utf-8") as f:
         f.write(playlist)
 
     print("\n已生成 playlist.m3u")
