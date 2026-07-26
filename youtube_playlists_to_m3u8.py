@@ -32,7 +32,7 @@ from urllib.parse import parse_qs, urlparse
 # Put your YouTube playlist links here.
 # Add one string per playlist. The script will generate one .m3u8 file per link.
 PLAYLIST_URLS = [
-    "https://www.youtube.com/playlist?list=PLCA_sYp__ahVnIoY4i4H4t1X5lripurpv",
+    "https://www.youtube.com/playlist?list=PLjlPO2gjIxr_PFiqz98AB0-j9xEYbCE9O",
 ]
 
 
